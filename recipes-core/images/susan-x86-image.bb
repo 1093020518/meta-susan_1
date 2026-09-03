@@ -176,6 +176,12 @@ install_sudoagi_data_compat() {
     install -d ${IMAGE_ROOTFS}/sudoagi/data
     install -d ${IMAGE_ROOTFS}/sudoagi/private
 
+    if [ -d ${IMAGE_ROOTFS}/data/mender ]; then
+        install -d ${IMAGE_ROOTFS}${datadir}/susan/data-seed/mender
+        cp -a ${IMAGE_ROOTFS}/data/mender/. \
+            ${IMAGE_ROOTFS}${datadir}/susan/data-seed/mender/
+    fi
+
     rm -rf ${IMAGE_ROOTFS}/data
     ln -snf /sudoagi/data ${IMAGE_ROOTFS}/data
 

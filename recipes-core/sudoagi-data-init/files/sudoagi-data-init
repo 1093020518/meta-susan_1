@@ -2,11 +2,15 @@
 set -eu
 
 DATA_ROOT="/sudoagi/data"
+MENDER_SEED="/usr/share/susan/data-seed/mender"
 
 if ! grep -qs " ${DATA_ROOT} " /proc/mounts; then
     echo "sudoagi-data-init: ${DATA_ROOT} is not mounted" >&2
     exit 1
 fi
+
+mkdir -p "${DATA_ROOT}/home"
+chmod 0755 "${DATA_ROOT}/home"
 
 mkdir -p "${DATA_ROOT}/containerd"
 chown root:root "${DATA_ROOT}/containerd"
@@ -15,5 +19,20 @@ chmod 0711 "${DATA_ROOT}/containerd"
 mkdir -p "${DATA_ROOT}/workspace"
 chown root:susan-admins "${DATA_ROOT}/workspace"
 chmod 2775 "${DATA_ROOT}/workspace"
+
+mkdir -p "${DATA_ROOT}/mender"
+chmod 0700 "${DATA_ROOT}/mender"
+
+if [ -d "${MENDER_SEED}" ]; then
+    for src in "${MENDER_SEED}"/*; do
+        [ -e "$src" ] || continue
+
+        name="${src##*/}"
+
+        if [ ! -e "${DATA_ROOT}/mender/${name}" ]; then
+            cp -a "$src" "${DATA_ROOT}/mender/"
+        fi
+    done
+fi
 
 exit 0

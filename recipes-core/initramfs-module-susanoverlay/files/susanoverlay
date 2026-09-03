@@ -43,6 +43,10 @@ susanoverlay_run() {
         susanoverlay_finish_without_overlay \
             "Cannot mount data/overlay device $overlay_dev"
 
+    # Directories required before systemd processes /etc/fstab.
+    mkdir -p "$data_mount/home"
+    chmod 0755 "$data_mount/home"
+
     count=0
     while [ ! -e "$private_dev" ] && [ "$count" -lt 10 ]; do
         sleep 1

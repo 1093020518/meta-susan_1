@@ -7,7 +7,6 @@ IMAGE_FILE=""
 SLOT="both"
 DRY_RUN=0
 ASSUME_YES=0
-KEEP_PRIVATE=1
 
 usage() {
     cat <<'EOF'
@@ -21,7 +20,6 @@ Options:
   --slot a|b|both     Restore rootfs_a, rootfs_b, or both, default both
   --dry-run           Print planned operations only
   -y, --yes           Do not prompt before writing
-  --wipe-private      Recreate private overlay/config/mender directories only after manual mkfs
   -h, --help          Show this help
 
 Behavior:
@@ -45,7 +43,6 @@ while [ "$#" -gt 0 ]; do
         --slot) SLOT="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
         -y|--yes) ASSUME_YES=1; shift ;;
-        --wipe-private) KEEP_PRIVATE=0; shift ;;
         -h|--help) usage; exit 0 ;;
         *) fatal "unknown option: $1" ;;
     esac
@@ -63,7 +60,6 @@ fi
 ROOTFS_A="${TARGET_DISK}p4"
 ROOTFS_B="${TARGET_DISK}p5"
 DATA_PART="${TARGET_DISK}p7"
-PRIVATE_PART="${TARGET_DISK}p8"
 [ -b "$ROOTFS_A" ] || fatal "rootfs_a partition not found: $ROOTFS_A"
 [ -b "$ROOTFS_B" ] || fatal "rootfs_b partition not found: $ROOTFS_B"
 
@@ -185,18 +181,6 @@ prepare_data() {
     run umount "$mnt"
 }
 
-prepare_private() {
-    [ "$KEEP_PRIVATE" -eq 1 ] || return 0
-    [ -b "$PRIVATE_PART" ] || return 0
-    local mnt=/tmp/sudoagi-private
-    run mkdir -p "$mnt"
-    if ! mountpoint -q "$mnt"; then
-        run mount "$PRIVATE_PART" "$mnt"
-    fi
-    run mkdir -p "$mnt/mender"
-    run umount "$mnt"
-}
-
 reset_boot_state() {
     local boot_part
     local efi_dev
@@ -313,6 +297,5 @@ else
 fi
 
 prepare_data
-prepare_private
 reset_boot_state
 log "restore finished. Reboot and choose normal boot."

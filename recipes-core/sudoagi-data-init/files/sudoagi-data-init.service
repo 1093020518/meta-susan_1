@@ -1,8 +1,7 @@
 [Unit]
 Description=Prepare SusanOS persistent data directories
-After=local-fs.target
 RequiresMountsFor=/sudoagi/data
-Before=containerd.service docker.service miniforge3-install.service
+Before=containerd.service docker.service miniforge3-install.service mender-authd.service mender-updated.service mender-client.service
 
 [Service]
 Type=oneshot
