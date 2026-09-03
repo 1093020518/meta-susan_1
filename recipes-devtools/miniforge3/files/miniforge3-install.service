@@ -1,7 +1,7 @@
 [Unit]
 Description=Install shared Miniforge3 runtime
-RequiresMountsFor=/data
-After=local-fs.target
+Requires=sudoagi-data-init.service
+After=sudoagi-data-init.service
 
 [Service]
 Type=oneshot

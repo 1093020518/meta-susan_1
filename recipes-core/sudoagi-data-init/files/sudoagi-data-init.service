@@ -1,0 +1,13 @@
+[Unit]
+Description=Prepare SusanOS persistent data directories
+After=local-fs.target
+RequiresMountsFor=/sudoagi/data
+Before=containerd.service docker.service miniforge3-install.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/sudoagi-data-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

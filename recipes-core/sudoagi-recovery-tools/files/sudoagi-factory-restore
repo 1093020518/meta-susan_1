@@ -62,6 +62,7 @@ fi
 
 ROOTFS_A="${TARGET_DISK}p4"
 ROOTFS_B="${TARGET_DISK}p5"
+DATA_PART="${TARGET_DISK}p7"
 PRIVATE_PART="${TARGET_DISK}p8"
 [ -b "$ROOTFS_A" ] || fatal "rootfs_a partition not found: $ROOTFS_A"
 [ -b "$ROOTFS_B" ] || fatal "rootfs_b partition not found: $ROOTFS_B"
@@ -169,6 +170,21 @@ write_wic_partition_to_part() {
     e2fsck -fy "$dst_part" || true
 }
 
+prepare_data() {
+    [ -b "$DATA_PART" ] || return 0
+    local mnt=/tmp/sudoagi-data
+
+    run mkdir -p "$mnt"
+    if ! mountpoint -q "$mnt"; then
+        run mount "$DATA_PART" "$mnt"
+    fi
+
+    run rm -rf "$mnt/upper" "$mnt/workdir"
+    run mkdir -p "$mnt/upper" "$mnt/workdir"
+
+    run umount "$mnt"
+}
+
 prepare_private() {
     [ "$KEEP_PRIVATE" -eq 1 ] || return 0
     [ -b "$PRIVATE_PART" ] || return 0
@@ -177,9 +193,7 @@ prepare_private() {
     if ! mountpoint -q "$mnt"; then
         run mount "$PRIVATE_PART" "$mnt"
     fi
-    run mkdir -p "$mnt/overlay/rootfs_a/upper" "$mnt/overlay/rootfs_a/work"
-    run mkdir -p "$mnt/overlay/rootfs_b/upper" "$mnt/overlay/rootfs_b/work"
-    run mkdir -p "$mnt/config" "$mnt/mender"
+    run mkdir -p "$mnt/mender"
     run umount "$mnt"
 }
 
@@ -298,6 +312,7 @@ else
     fatal "no supported image found in $SOURCE_DIR"
 fi
 
+prepare_data
 prepare_private
 reset_boot_state
 log "restore finished. Reboot and choose normal boot."

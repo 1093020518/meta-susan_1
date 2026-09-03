@@ -15,24 +15,33 @@ susanoverlay_finish_without_overlay() {
 
 susanoverlay_run() {
     oldroot="${ROOTFS_DIR:-/rootfs}"
+    overlay_dev="${bootparam_sudoagi_overlay_dev:-/dev/nvme0n1p7}"
     private_dev="${bootparam_sudoagi_private_dev:-/dev/nvme0n1p8}"
+    data_mount="/sudoagi-data"
     private_mount="/sudoagi-private"
     lower_mount="/sudoagi-lower"
     newroot="/sudoagi-newroot"
 
     case "${bootparam_root:-}" in
-        *p4|*rootfs_a*)
-            slot="rootfs_a"
-            ;;
-        *p5|*rootfs_b*)
-            slot="rootfs_b"
+        *p4|*rootfs_a*|*p5|*rootfs_b*)
             ;;
         *)
-            susanoverlay_finish_without_overlay "Cannot determine active rootfs slot from root=${bootparam_root:-}"
+            susanoverlay_finish_without_overlay \
+                "Cannot determine active rootfs from root=${bootparam_root:-}"
             ;;
     esac
 
-    mkdir -p "$private_mount"
+    mkdir -p "$data_mount"
+
+    count=0
+    while [ ! -e "$overlay_dev" ] && [ "$count" -lt 10 ]; do
+        sleep 1
+        count=$((count + 1))
+    done
+
+    mount -n -t ext4 -o rw "$overlay_dev" "$data_mount" || \
+        susanoverlay_finish_without_overlay \
+            "Cannot mount data/overlay device $overlay_dev"
 
     count=0
     while [ ! -e "$private_dev" ] && [ "$count" -lt 10 ]; do
@@ -40,11 +49,13 @@ susanoverlay_run() {
         count=$((count + 1))
     done
 
-    mount -n -t ext4 -o rw "$private_dev" "$private_mount" || \
-        susanoverlay_finish_without_overlay "Cannot mount private overlay device $private_dev"
+    mkdir -p "$private_mount"
 
-    upper_dir="$private_mount/overlay/$slot/upper"
-    work_dir="$private_mount/overlay/$slot/work"
+    mount -n -t ext4 -o rw "$private_dev" "$private_mount" || \
+        susanoverlay_finish_without_overlay "Cannot mount private device $private_dev"
+
+    upper_dir="$data_mount/upper"
+    work_dir="$data_mount/workdir"
 
     mkdir -p "$upper_dir" "$work_dir" "$lower_mount" "$newroot"
 
@@ -58,9 +69,16 @@ susanoverlay_run() {
         "$newroot" || \
         susanoverlay_finish_without_overlay "Cannot mount overlay rootfs"
 
-    mkdir -p "$newroot/proc" "$newroot/sys" "$newroot/dev" "$newroot/rofs" "$newroot/sudoagi/private"
+    mkdir -p \
+        "$newroot/proc" \
+        "$newroot/sys" \
+        "$newroot/dev" \
+        "$newroot/rofs" \
+        "$newroot/sudoagi/data" \
+        "$newroot/sudoagi/private"
 
     mount -n --move "$lower_mount" "$newroot/rofs"
+    mount -n --move "$data_mount" "$newroot/sudoagi/data"
     mount -n --move "$private_mount" "$newroot/sudoagi/private"
     mount -n --move /proc "$newroot/proc"
     mount -n --move /sys "$newroot/sys"

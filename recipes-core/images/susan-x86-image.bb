@@ -88,7 +88,7 @@ EXTRA_USERS_PARAMS:append = " ${@susan_image_extra_users(d)}"
 
 CORE_IMAGE_EXTRA_INSTALL += " packagegroup-susan-base \
     susan-users \
-    sudoagi-runtime-config \
+    sudoagi-data-init \
     miniforge3 \
     perl \
     kernel-modules \
@@ -155,7 +155,7 @@ install_susan_user_tmpfiles() {
 ROOTFS_POSTPROCESS_COMMAND += "install_susan_user_tmpfiles;"
 
 bind_home_to_data() {
-    install -d ${IMAGE_ROOTFS}/data/home
+    install -d ${IMAGE_ROOTFS}/sudoagi/data/home
     echo "/data/home /home none bind 0 0" >> ${IMAGE_ROOTFS}${sysconfdir}/fstab
 }
 ROOTFS_POSTPROCESS_COMMAND += "bind_home_to_data;"
@@ -171,12 +171,16 @@ prepare_log_partition() {
 }
 ROOTFS_POSTPROCESS_COMMAND += "prepare_log_partition;"
 
-create_sudoagi_paths() {
+install_sudoagi_data_compat() {
     install -d ${IMAGE_ROOTFS}/sudoagi
-    ln -snf /data ${IMAGE_ROOTFS}/sudoagi/data
+    install -d ${IMAGE_ROOTFS}/sudoagi/data
     install -d ${IMAGE_ROOTFS}/sudoagi/private
+
+    rm -rf ${IMAGE_ROOTFS}/data
+    ln -snf /sudoagi/data ${IMAGE_ROOTFS}/data
+
     echo "/dev/nvme0n1p8 /sudoagi/private ext4 defaults 0 2" >> ${IMAGE_ROOTFS}${sysconfdir}/fstab
 }
-ROOTFS_POSTPROCESS_COMMAND += "create_sudoagi_paths;"
+ROOTFS_POSTPROCESS_COMMAND += "install_sudoagi_data_compat;"
 
 IMAGE_INSTALL:append = " docker-moby docker-compose libclang1-18 libllvm18 libedit2 libtinfo6"

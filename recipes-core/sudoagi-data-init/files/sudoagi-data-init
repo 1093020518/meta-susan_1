@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+DATA_ROOT="/sudoagi/data"
+
+if ! grep -qs " ${DATA_ROOT} " /proc/mounts; then
+    echo "sudoagi-data-init: ${DATA_ROOT} is not mounted" >&2
+    exit 1
+fi
+
+mkdir -p "${DATA_ROOT}/containerd"
+chown root:root "${DATA_ROOT}/containerd"
+chmod 0711 "${DATA_ROOT}/containerd"
+
+mkdir -p "${DATA_ROOT}/workspace"
+chown root:susan-admins "${DATA_ROOT}/workspace"
+chmod 2775 "${DATA_ROOT}/workspace"
+
+exit 0
