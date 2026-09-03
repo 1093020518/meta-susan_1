@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+cat <<'EOF'
+Susan Recovery
+
+Useful commands:
+  lsblk -f
+  sudoagi-factory-restore --source /mnt/restore --slot both
+  sudoagi-factory-restore --source /mnt/restore --slot a --dry-run
+
+Mount USB example:
+  mkdir -p /mnt/restore
+  mount /dev/sdX1 /mnt/restore
+EOF
+
+exec /bin/sh -l

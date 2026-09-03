@@ -1,0 +1,8 @@
+[Match]
+Name=enp2s0f3
+KernelCommandLine=!nfsroot
+KernelCommandLine=!ip
+
+[Network]
+Address=192.168.110.10/24
+DHCP=no

@@ -1,0 +1,94 @@
+#!/bin/sh
+set -eu
+
+PRIVATE_ROOT=/sudoagi/private
+CONFIG_FILE=/etc/sudoagi/persistent-config.conf
+
+mkdir -p \
+    "$PRIVATE_ROOT/overlay/rootfs_a/upper" \
+    "$PRIVATE_ROOT/overlay/rootfs_a/work" \
+    "$PRIVATE_ROOT/overlay/rootfs_b/upper" \
+    "$PRIVATE_ROOT/overlay/rootfs_b/work" \
+    "$PRIVATE_ROOT/config" \
+    "$PRIVATE_ROOT/mender"
+
+if [ ! -s "$PRIVATE_ROOT/mender/device_type" ]; then
+    echo "device_type=genericx86-64" > "$PRIVATE_ROOT/mender/device_type"
+fi
+
+init_file() {
+    src=$1
+    persist=$2
+
+    mkdir -p "$(dirname "$persist")"
+    if [ ! -e "$persist" ]; then
+        if [ -f "$src" ]; then
+            cp -a "$src" "$persist"
+        elif [ "$(basename "$persist")" = "device-id" ]; then
+            cat /proc/sys/kernel/random/uuid > "$persist"
+        else
+            : > "$persist"
+        fi
+    fi
+}
+
+init_dir() {
+    src=$1
+    persist=$2
+
+    if [ ! -d "$persist" ]; then
+        mkdir -p "$(dirname "$persist")"
+        if [ -d "$src" ]; then
+            cp -a "$src" "$persist"
+        else
+            mkdir -p "$persist"
+        fi
+    fi
+}
+
+bind_path() {
+    type=$1
+    persist=$2
+    target=$3
+
+    if mountpoint -q "$target"; then
+        return 0
+    fi
+
+    if [ "$type" = "dir" ]; then
+        mkdir -p "$target"
+    else
+        mkdir -p "$(dirname "$target")"
+        [ -e "$target" ] || : > "$target"
+    fi
+
+    mount --bind "$persist" "$target"
+}
+
+[ -r "$CONFIG_FILE" ] || exit 0
+
+while read -r name type src persist target extra; do
+    case "$name" in
+        ""|\#*) continue ;;
+    esac
+
+    if [ -n "${extra:-}" ]; then
+        echo "Invalid persistent config entry: $name $type $src $persist $target $extra" >&2
+        exit 1
+    fi
+
+    case "$type" in
+        dir)
+            init_dir "$src" "$persist"
+            bind_path "$type" "$persist" "$target"
+            ;;
+        file)
+            init_file "$src" "$persist"
+            bind_path "$type" "$persist" "$target"
+            ;;
+        *)
+            echo "Unsupported persistent config type for $name: $type" >&2
+            exit 1
+            ;;
+    esac
+done < "$CONFIG_FILE"

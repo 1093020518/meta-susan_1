@@ -1,0 +1,11 @@
+[Unit]
+Description=Install shared Miniforge3 runtime
+RequiresMountsFor=/data
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/miniforge3/install-miniforge3
+
+[Install]
+WantedBy=multi-user.target

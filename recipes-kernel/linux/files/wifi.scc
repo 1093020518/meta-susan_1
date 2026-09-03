@@ -1,0 +1,9 @@
+# wifi.scc — enable the Intel AX211 (Raptor Lake CNVi) WiFi driver.
+# The base genericx86-64 config leaves CONFIG_IWLWIFI off, so the Intel WiFi
+# adapter (PCI 8086:7a70 = AX211) never binds and there is no wlan0. This
+# fragment turns on iwlwifi + its MVM opmode (the 8000-series+ path the AX211
+# uses; see wifi.cfg). "non-hardware" so it merges into the kernel-meta .config
+# without forcing a full feature branch. Mirrors touchpad.scc. Firmware ships
+# separately via linux-firmware (iwlwifi-so-a0-gf-a0-*.ucode) + wireless-regdb.
+define KFEATURE_DESCRIPTION "Intel AX211 WiFi (iwlwifi + iwlmvm)"
+kconf non-hardware wifi.cfg

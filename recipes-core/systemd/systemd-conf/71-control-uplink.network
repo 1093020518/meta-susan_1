@@ -1,0 +1,9 @@
+[Match]
+Name=enp2s0f1
+KernelCommandLine=!nfsroot
+KernelCommandLine=!ip
+
+[Network]
+DHCP=no
+VLAN=vlan10
+LinkLocalAddressing=no

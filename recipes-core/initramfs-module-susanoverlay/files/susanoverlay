@@ -1,0 +1,71 @@
+#!/bin/sh
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+susanoverlay_enabled() {
+    [ "${bootparam_sudoagi_overlay:-}" = "1" ] || [ "${bootparam_sudoagi_overlay:-}" = "true" ]
+}
+
+susanoverlay_finish_without_overlay() {
+    echo "$1" >/dev/console
+    echo "Susan overlayroot failed, continuing with read-only rootfs" >/dev/console
+    . /init.d/99-finish
+    eval "finish_run"
+}
+
+susanoverlay_run() {
+    oldroot="${ROOTFS_DIR:-/rootfs}"
+    private_dev="${bootparam_sudoagi_private_dev:-/dev/nvme0n1p8}"
+    private_mount="/sudoagi-private"
+    lower_mount="/sudoagi-lower"
+    newroot="/sudoagi-newroot"
+
+    case "${bootparam_root:-}" in
+        *p4|*rootfs_a*)
+            slot="rootfs_a"
+            ;;
+        *p5|*rootfs_b*)
+            slot="rootfs_b"
+            ;;
+        *)
+            susanoverlay_finish_without_overlay "Cannot determine active rootfs slot from root=${bootparam_root:-}"
+            ;;
+    esac
+
+    mkdir -p "$private_mount"
+
+    count=0
+    while [ ! -e "$private_dev" ] && [ "$count" -lt 10 ]; do
+        sleep 1
+        count=$((count + 1))
+    done
+
+    mount -n -t ext4 -o rw "$private_dev" "$private_mount" || \
+        susanoverlay_finish_without_overlay "Cannot mount private overlay device $private_dev"
+
+    upper_dir="$private_mount/overlay/$slot/upper"
+    work_dir="$private_mount/overlay/$slot/work"
+
+    mkdir -p "$upper_dir" "$work_dir" "$lower_mount" "$newroot"
+
+    mount -n -o bind "$oldroot" "$lower_mount" || \
+        susanoverlay_finish_without_overlay "Cannot bind active rootfs"
+    mount -n -o remount,ro "$lower_mount" || \
+        susanoverlay_finish_without_overlay "Cannot remount active rootfs read-only"
+
+    mount -n -t overlay overlay \
+        -o lowerdir="$lower_mount",upperdir="$upper_dir",workdir="$work_dir" \
+        "$newroot" || \
+        susanoverlay_finish_without_overlay "Cannot mount overlay rootfs"
+
+    mkdir -p "$newroot/proc" "$newroot/sys" "$newroot/dev" "$newroot/rofs" "$newroot/sudoagi/private"
+
+    mount -n --move "$lower_mount" "$newroot/rofs"
+    mount -n --move "$private_mount" "$newroot/sudoagi/private"
+    mount -n --move /proc "$newroot/proc"
+    mount -n --move /sys "$newroot/sys"
+    mount -n --move /dev "$newroot/dev"
+
+    exec chroot "$newroot" "${bootparam_init:-/sbin/init}" || \
+        susanoverlay_finish_without_overlay "Cannot enter overlay rootfs"
+}

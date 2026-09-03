@@ -1,0 +1,201 @@
+#!/bin/bash
+set -euo pipefail
+
+TARGET_DISK="/dev/nvme0n1"
+SOURCE_DIR="/mnt/restore"
+SLOT="both"
+DRY_RUN=0
+ASSUME_YES=0
+KEEP_PRIVATE=1
+
+usage() {
+    cat <<'EOF'
+Usage:
+  sudoagi-factory-restore [options]
+
+Options:
+  --source DIR        Directory containing .mender, .ext4(.gz/.xz/.zst), or .wic
+  --target DISK       Target disk, default /dev/nvme0n1
+  --slot a|b|both     Restore rootfs_a, rootfs_b, or both, default both
+  --dry-run           Print planned operations only
+  -y, --yes           Do not prompt before writing
+  --wipe-private      Recreate private overlay/config/mender directories only after manual mkfs
+  -h, --help          Show this help
+
+Behavior:
+  *.mender              Extract rootfs payload and write it to selected p4/p5 slots
+  *.ext4[.gz/.xz/.zst]  Write rootfs image directly to selected p4/p5 slots
+  *.wic                 Extract p4/p5 payload from WIC and write matching slots
+
+The script never rewrites the whole disk. It only writes selected rootfs slots.
+EOF
+}
+
+log() { printf '[restore] %s\n' "$*"; }
+fatal() { printf '[restore][error] %s\n' "$*" >&2; exit 1; }
+run() { log "+ $*"; [ "$DRY_RUN" -eq 1 ] || "$@"; }
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --source) SOURCE_DIR="$2"; shift 2 ;;
+        --target) TARGET_DISK="$2"; shift 2 ;;
+        --slot) SLOT="$2"; shift 2 ;;
+        --dry-run) DRY_RUN=1; shift ;;
+        -y|--yes) ASSUME_YES=1; shift ;;
+        --wipe-private) KEEP_PRIVATE=0; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) fatal "unknown option: $1" ;;
+    esac
+done
+
+case "$SLOT" in a|b|both) ;; *) fatal "--slot must be a, b, or both" ;; esac
+[ -d "$SOURCE_DIR" ] || fatal "source directory not found: $SOURCE_DIR"
+[ -b "$TARGET_DISK" ] || fatal "target disk not found: $TARGET_DISK"
+
+ROOTFS_A="${TARGET_DISK}p4"
+ROOTFS_B="${TARGET_DISK}p5"
+PRIVATE_PART="${TARGET_DISK}p8"
+[ -b "$ROOTFS_A" ] || fatal "rootfs_a partition not found: $ROOTFS_A"
+[ -b "$ROOTFS_B" ] || fatal "rootfs_b partition not found: $ROOTFS_B"
+
+CURRENT_ROOT="$(findmnt -n -o SOURCE / 2>/dev/null || true)"
+case "$CURRENT_ROOT" in
+    "$ROOTFS_A"|"$ROOTFS_B"|overlay)
+        fatal "refusing to restore from main system root: $CURRENT_ROOT. Boot recovery first."
+        ;;
+esac
+
+slots=()
+if [ "$SLOT" = "a" ] || [ "$SLOT" = "both" ]; then
+    slots+=("a:$ROOTFS_A")
+fi
+if [ "$SLOT" = "b" ] || [ "$SLOT" = "both" ]; then
+    slots+=("b:$ROOTFS_B")
+fi
+
+find_one() {
+    local pattern="$1"
+    find "$SOURCE_DIR" -maxdepth 1 -type f -name "$pattern" | sort | tail -n 1
+}
+
+ARTIFACT="$(find_one '*.mender')"
+EXT4_IMG="$(find_one '*.ext4')"
+[ -n "$EXT4_IMG" ] || EXT4_IMG="$(find_one '*.ext4.gz')"
+[ -n "$EXT4_IMG" ] || EXT4_IMG="$(find_one '*.ext4.xz')"
+[ -n "$EXT4_IMG" ] || EXT4_IMG="$(find_one '*.ext4.zst')"
+WIC_IMG="$(find_one '*.wic')"
+
+stream_file() {
+    local file="$1"
+    case "$file" in
+        *.gz) gzip -dc "$file" ;;
+        *.xz) xz -dc "$file" ;;
+        *.zst) zstd -dc "$file" ;;
+        *) cat "$file" ;;
+    esac
+}
+
+write_stream_to_part() {
+    local image="$1"
+    local part="$2"
+    log "writing $image to $part"
+    if [ "$DRY_RUN" -eq 1 ]; then
+        return 0
+    fi
+    stream_file "$image" | dd of="$part" bs=16M conv=fsync status=progress
+    e2fsck -fy "$part" || true
+    resize2fs "$part" || true
+}
+
+mender_payload_path() {
+    local artifact="$1"
+    tar -xOf "$artifact" manifest | awk '$2 ~ /^data\/0000\/.*(rootfs-image|\.ext4|\.img)/ && $2 !~ /\.sha/ { print $2; exit }'
+}
+
+write_mender_payload_to_part() {
+    local artifact="$1"
+    local part="$2"
+    local payload
+    payload="$(mender_payload_path "$artifact")"
+    [ -n "$payload" ] || fatal "no rootfs payload found in manifest: $artifact"
+    log "streaming Mender payload $payload to $part"
+    if [ "$DRY_RUN" -eq 1 ]; then
+        return 0
+    fi
+    tar -xOf "$artifact" data/0000.tar.gz | tar -xzOf - "$payload" | dd of="$part" bs=16M conv=fsync status=progress
+    e2fsck -fy "$part" || true
+    resize2fs "$part" || true
+}
+wic_part_range() {
+    local image="$1"
+    local number="$2"
+    parted -m "$image" unit B print | awk -F: -v n="$number" '$1 == n { gsub(/B/, "", $2); gsub(/B/, "", $4); print $2, $4; }'
+}
+
+write_wic_partition_to_part() {
+    local image="$1"
+    local src_part="$2"
+    local dst_part="$3"
+    local range start size
+    range="$(wic_part_range "$image" "$src_part")"
+    [ -n "$range" ] || fatal "partition $src_part not found in WIC: $image"
+    start="${range% *}"
+    size="${range#* }"
+    log "extracting WIC partition $src_part offset=$start size=$size to $dst_part"
+    if [ "$DRY_RUN" -eq 1 ]; then
+        return 0
+    fi
+    dd if="$image" of="$dst_part" bs=16M iflag=skip_bytes,count_bytes skip="$start" count="$size" conv=fsync status=progress
+    e2fsck -fy "$dst_part" || true
+    resize2fs "$dst_part" || true
+}
+
+prepare_private() {
+    [ "$KEEP_PRIVATE" -eq 1 ] || return 0
+    [ -b "$PRIVATE_PART" ] || return 0
+    local mnt=/mnt/sudoagi-private
+    run mkdir -p "$mnt"
+    if ! mountpoint -q "$mnt"; then
+        run mount "$PRIVATE_PART" "$mnt"
+    fi
+    run mkdir -p "$mnt/overlay/rootfs_a/upper" "$mnt/overlay/rootfs_a/work"
+    run mkdir -p "$mnt/overlay/rootfs_b/upper" "$mnt/overlay/rootfs_b/work"
+    run mkdir -p "$mnt/config" "$mnt/mender"
+    run umount "$mnt"
+}
+
+log "target disk: $TARGET_DISK"
+log "source dir:  $SOURCE_DIR"
+log "slot:        $SLOT"
+log "current /:   ${CURRENT_ROOT:-unknown}"
+
+if [ "$ASSUME_YES" -ne 1 ] && [ "$DRY_RUN" -ne 1 ]; then
+    echo
+    echo "This will overwrite selected rootfs partition(s):"
+    printf '  %s\n' "${slots[@]}"
+    echo "Type RESTORE to continue:"
+    read -r answer
+    [ "$answer" = "RESTORE" ] || fatal "cancelled"
+fi
+
+if [ -n "$ARTIFACT" ]; then
+    for item in "${slots[@]}"; do
+        write_mender_payload_to_part "$ARTIFACT" "${item#*:}"
+    done
+elif [ -n "$EXT4_IMG" ]; then
+    for item in "${slots[@]}"; do
+        write_stream_to_part "$EXT4_IMG" "${item#*:}"
+    done
+elif [ -n "$WIC_IMG" ]; then
+    for item in "${slots[@]}"; do
+        case "${item%%:*}" in
+            a) write_wic_partition_to_part "$WIC_IMG" 4 "${item#*:}" ;;
+            b) write_wic_partition_to_part "$WIC_IMG" 5 "${item#*:}" ;;
+        esac
+    done
+else
+    fatal "no supported image found in $SOURCE_DIR"
+fi
+
+prepare_private
+log "restore finished. Reboot and choose normal boot."

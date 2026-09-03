@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+
+prefix=/data/miniforge3
+installer=/usr/libexec/miniforge3/Miniforge3-Linux-x86_64.sh
+expected_sha256=848194851a98903134187fbb4ab50efe87b003e0c0f808f97644b7524a62bf2c
+
+if [ -x "${prefix}/bin/conda" ]; then
+    rm -f "${installer}"
+    exit 0
+fi
+
+if [ -e "${prefix}" ]; then
+    echo "Refusing to overwrite incomplete Miniforge directory: ${prefix}" >&2
+    exit 1
+fi
+
+actual_sha256="$(sha256sum "${installer}" | awk '{print $1}')"
+if [ "${actual_sha256}" != "${expected_sha256}" ]; then
+    echo "Miniforge installer checksum verification failed" >&2
+    exit 1
+fi
+
+if ! command -v ldd >/dev/null 2>&1; then
+    # MyOS Scarthgap ships glibc 2.39. This fallback supports upgrades from
+    # images created before the ldd runtime package was added.
+    export CONDA_OVERRIDE_GLIBC=2.39
+fi
+
+mkdir -p /data
+HOME=/root bash "${installer}" -b -p "${prefix}"
+chown -R root:root "${prefix}"
+rm -f "${installer}"
