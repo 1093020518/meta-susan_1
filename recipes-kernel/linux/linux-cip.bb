@@ -1,11 +1,8 @@
 SUMMARY = "CIP (Civil Infrastructure Platform) Linux kernel"
-DESCRIPTION = "Mainline-based CIP kernel (linux-6.12.y-cip, ~10-yr SLTS) from \
+DESCRIPTION = "Mainline-based CIP kernel (linux-6.12.y-cip, SLTS) from \
 git.kernel.org. Built via kernel-yocto with the in-tree x86_64_defconfig baseline \
-(alldefconfig) PLUS a proven-booting full-config fragment (proven.cfg, captured from \
-our linux-yocto 6.12 v10 build / kmeta common-pc-64 BSP) -- instead of the thin \
-x86_64_defconfig alone that hung pre-earlycon on this real UEFI box. CIP source + \
-SRCREV (10-yr support) kept; the proven config is applied as a merge fragment so other \
-recipes/layers can still inject extra CONFIG via SRC_URI .cfg fragments. No yocto kmeta."
+(alldefconfig) plus board-bsp.cfg for the real x86 UEFI target. Extra kernel \
+CONFIG fragments can be injected by bbappend files through SRC_URI. No yocto kmeta."
 
 LICENSE = "GPL-2.0-only"
 LIC_FILES_CHKSUM = "file://COPYING;md5=6bc538ed5bd9a7fc9398086aedcd7e46"
