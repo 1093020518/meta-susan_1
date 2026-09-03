@@ -27,7 +27,8 @@ Behavior:
   *.ext4[.gz/.xz/.zst]  Write rootfs image directly to selected p4/p5 slots
   *.wic                 Extract p4/p5 payload from WIC and write matching slots
 
-The script never rewrites the whole disk. It only writes selected rootfs slots.
+The script only restores selected rootfs slots and resets the GRUB/Mender boot state.
+The data and private partitions are preserved.
 EOF
 }
 
@@ -59,7 +60,6 @@ fi
 
 ROOTFS_A="${TARGET_DISK}p4"
 ROOTFS_B="${TARGET_DISK}p5"
-DATA_PART="${TARGET_DISK}p7"
 [ -b "$ROOTFS_A" ] || fatal "rootfs_a partition not found: $ROOTFS_A"
 [ -b "$ROOTFS_B" ] || fatal "rootfs_b partition not found: $ROOTFS_B"
 
@@ -164,21 +164,6 @@ write_wic_partition_to_part() {
     fi
     dd if="$image" of="$dst_part" bs=16M iflag=skip_bytes,count_bytes skip="$start" count="$size" conv=fsync status=progress
     e2fsck -fy "$dst_part" || true
-}
-
-prepare_data() {
-    [ -b "$DATA_PART" ] || return 0
-    local mnt=/tmp/sudoagi-data
-
-    run mkdir -p "$mnt"
-    if ! mountpoint -q "$mnt"; then
-        run mount "$DATA_PART" "$mnt"
-    fi
-
-    run rm -rf "$mnt/upper" "$mnt/workdir"
-    run mkdir -p "$mnt/upper" "$mnt/workdir"
-
-    run umount "$mnt"
 }
 
 reset_boot_state() {
@@ -296,6 +281,5 @@ else
     fatal "no supported image found in $SOURCE_DIR"
 fi
 
-prepare_data
 reset_boot_state
 log "restore finished. Reboot and choose normal boot."
