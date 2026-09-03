@@ -3,6 +3,7 @@ set -euo pipefail
 
 TARGET_DISK="/dev/nvme0n1"
 SOURCE_DIR="/mnt/restore"
+IMAGE_FILE=""
 SLOT="both"
 DRY_RUN=0
 ASSUME_YES=0
@@ -15,6 +16,7 @@ Usage:
 
 Options:
   --source DIR        Directory containing .mender, .ext4(.gz/.xz/.zst), or .wic
+  --image FILE        Explicit image file to restore; preferred for production
   --target DISK       Target disk, default /dev/nvme0n1
   --slot a|b|both     Restore rootfs_a, rootfs_b, or both, default both
   --dry-run           Print planned operations only
@@ -38,6 +40,7 @@ run() { log "+ $*"; [ "$DRY_RUN" -eq 1 ] || "$@"; }
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --source) SOURCE_DIR="$2"; shift 2 ;;
+        --image) IMAGE_FILE="$2"; shift 2 ;;
         --target) TARGET_DISK="$2"; shift 2 ;;
         --slot) SLOT="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
@@ -49,7 +52,12 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$SLOT" in a|b|both) ;; *) fatal "--slot must be a, b, or both" ;; esac
-[ -d "$SOURCE_DIR" ] || fatal "source directory not found: $SOURCE_DIR"
+if [ -n "$IMAGE_FILE" ]; then
+    [ -f "$IMAGE_FILE" ] || fatal "image file not found: $IMAGE_FILE"
+    SOURCE_DIR="$(dirname "$IMAGE_FILE")"
+else
+    [ -d "$SOURCE_DIR" ] || fatal "source directory not found: $SOURCE_DIR"
+fi
 [ -b "$TARGET_DISK" ] || fatal "target disk not found: $TARGET_DISK"
 
 ROOTFS_A="${TARGET_DISK}p4"
@@ -78,12 +86,25 @@ find_one() {
     find "$SOURCE_DIR" -maxdepth 1 -type f -name "$pattern" | sort | tail -n 1
 }
 
-ARTIFACT="$(find_one '*.mender')"
-EXT4_IMG="$(find_one '*.ext4')"
-[ -n "$EXT4_IMG" ] || EXT4_IMG="$(find_one '*.ext4.gz')"
-[ -n "$EXT4_IMG" ] || EXT4_IMG="$(find_one '*.ext4.xz')"
-[ -n "$EXT4_IMG" ] || EXT4_IMG="$(find_one '*.ext4.zst')"
-WIC_IMG="$(find_one '*.wic')"
+ARTIFACT=""
+EXT4_IMG=""
+WIC_IMG=""
+
+if [ -n "$IMAGE_FILE" ]; then
+    case "$IMAGE_FILE" in
+        *.mender) ARTIFACT="$IMAGE_FILE" ;;
+        *.ext4|*.ext4.gz|*.ext4.xz|*.ext4.zst) EXT4_IMG="$IMAGE_FILE" ;;
+        *.wic) WIC_IMG="$IMAGE_FILE" ;;
+        *) fatal "unsupported image type: $IMAGE_FILE" ;;
+    esac
+else
+    ARTIFACT="$(find_one '*.mender')"
+    EXT4_IMG="$(find_one '*.ext4')"
+    [ -n "$EXT4_IMG" ] || EXT4_IMG="$(find_one '*.ext4.gz')"
+    [ -n "$EXT4_IMG" ] || EXT4_IMG="$(find_one '*.ext4.xz')"
+    [ -n "$EXT4_IMG" ] || EXT4_IMG="$(find_one '*.ext4.zst')"
+    WIC_IMG="$(find_one '*.wic')"
+fi
 
 stream_file() {
     local file="$1"
@@ -104,7 +125,6 @@ write_stream_to_part() {
     fi
     stream_file "$image" | dd of="$part" bs=16M conv=fsync status=progress
     e2fsck -fy "$part" || true
-    resize2fs "$part" || true
 }
 
 mender_payload_path() {
@@ -115,16 +135,16 @@ mender_payload_path() {
 write_mender_payload_to_part() {
     local artifact="$1"
     local part="$2"
-    local payload
+    local payload inner_payload
     payload="$(mender_payload_path "$artifact")"
     [ -n "$payload" ] || fatal "no rootfs payload found in manifest: $artifact"
+    inner_payload="${payload##*/}"
     log "streaming Mender payload $payload to $part"
     if [ "$DRY_RUN" -eq 1 ]; then
         return 0
     fi
-    tar -xOf "$artifact" data/0000.tar.gz | tar -xzOf - "$payload" | dd of="$part" bs=16M conv=fsync status=progress
+    tar -xOf "$artifact" data/0000.tar.gz | tar -xzOf - "$inner_payload" | dd of="$part" bs=16M conv=fsync status=progress
     e2fsck -fy "$part" || true
-    resize2fs "$part" || true
 }
 wic_part_range() {
     local image="$1"
@@ -147,13 +167,12 @@ write_wic_partition_to_part() {
     fi
     dd if="$image" of="$dst_part" bs=16M iflag=skip_bytes,count_bytes skip="$start" count="$size" conv=fsync status=progress
     e2fsck -fy "$dst_part" || true
-    resize2fs "$dst_part" || true
 }
 
 prepare_private() {
     [ "$KEEP_PRIVATE" -eq 1 ] || return 0
     [ -b "$PRIVATE_PART" ] || return 0
-    local mnt=/mnt/sudoagi-private
+    local mnt=/tmp/sudoagi-private
     run mkdir -p "$mnt"
     if ! mountpoint -q "$mnt"; then
         run mount "$PRIVATE_PART" "$mnt"
@@ -162,6 +181,88 @@ prepare_private() {
     run mkdir -p "$mnt/overlay/rootfs_b/upper" "$mnt/overlay/rootfs_b/work"
     run mkdir -p "$mnt/config" "$mnt/mender"
     run umount "$mnt"
+}
+
+reset_boot_state() {
+    local boot_part
+    local efi_dev
+    local efi_mnt="/boot/efi"
+    local mounted_by_us=0
+    local current_source=""
+
+    case "$SLOT" in
+        a|both)
+            boot_part=4
+            ;;
+        b)
+            boot_part=5
+            ;;
+        *)
+            fatal "invalid slot for boot state: $SLOT"
+            ;;
+    esac
+
+    efi_dev="${TARGET_DISK}p2"
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log "+ reset GRUB/Mender boot state:"
+        log "  mender_boot_part=${boot_part}"
+        log "  upgrade_available=0"
+        log "  bootcount=0"
+        log "  delete stale mender_boot_part_hex"
+        return 0
+    fi
+
+    [ -b "$efi_dev" ] || fatal "EFI partition not found: $efi_dev"
+
+    command -v grub-mender-grubenv-set >/dev/null 2>&1 || \
+        fatal "grub-mender-grubenv-set not found"
+    command -v grub-mender-grubenv-print >/dev/null 2>&1 || \
+        fatal "grub-mender-grubenv-print not found"
+
+    mkdir -p "$efi_mnt"
+
+    if mountpoint -q "$efi_mnt"; then
+        current_source="$(findmnt -n -o SOURCE --target "$efi_mnt")"
+        [ "$current_source" = "$efi_dev" ] || \
+            fatal "$efi_mnt already mounted from unexpected device: $current_source"
+    else
+        log "mounting EFI partition $efi_dev on $efi_mnt"
+        mount "$efi_dev" "$efi_mnt"
+        mounted_by_us=1
+    fi
+
+    if [ ! -d "$efi_mnt/grub-mender-grubenv" ]; then
+        [ "$mounted_by_us" -eq 0 ] || umount "$efi_mnt"
+        fatal "Mender GRUB environment not found: $efi_mnt/grub-mender-grubenv"
+    fi
+
+    log "resetting GRUB/Mender boot state to p${boot_part}"
+
+    if grub-mender-grubenv-set --script - <<EOF
+mender_boot_part ${boot_part}
+upgrade_available 0
+bootcount 0
+mender_boot_part_hex
+EOF
+    then
+        :
+    else
+        rc=$?
+        [ "$mounted_by_us" -eq 0 ] || umount "$efi_mnt"
+        fatal "failed to reset GRUB/Mender environment (rc=$rc)"
+    fi
+
+    sync
+
+    log "GRUB/Mender state after reset:"
+    grub-mender-grubenv-print || true
+
+    if [ "$mounted_by_us" -eq 1 ]; then
+        umount "$efi_mnt"
+    fi
+
+    log "GRUB/Mender boot state reset complete"
 }
 
 log "target disk: $TARGET_DISK"
@@ -198,4 +299,5 @@ else
 fi
 
 prepare_private
+reset_boot_state
 log "restore finished. Reboot and choose normal boot."

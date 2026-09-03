@@ -8,7 +8,18 @@ SRC_URI = " \
     file://sudoagi-recovery-shell \
 "
 
-RDEPENDS:${PN} = "bash coreutils util-linux e2fsprogs parted tar gzip xz zstd"
+RDEPENDS:${PN} = " \
+    bash \
+    coreutils \
+    util-linux \
+    e2fsprogs \
+    parted \
+    tar \
+    gzip \
+    xz \
+    zstd \
+    grub-mender-grubenv \
+"
 
 S = "${WORKDIR}"
 

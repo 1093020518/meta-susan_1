@@ -102,7 +102,7 @@ CORE_IMAGE_EXTRA_INSTALL += " packagegroup-susan-base \
     gcc gcc-symlinks g++ g++-symlinks cpp cpp-symlinks \
     libstdc++-dev glibc-dev linux-libc-headers-dev \
     binutils binutils-symlinks make pkgconfig \
-    rust cargo rust-rustdoc rust-tools-clippy rust-tools-rustfmt \
+    susan-rust-toolchain \
 "
 
 LICENSE = "MIT"
