@@ -68,6 +68,7 @@ RDEPENDS:${PN} = " \
     zstd \
     lsof \
     strace \
+    stress-ng \
     bc \
     dmidecode \
     man-db \
