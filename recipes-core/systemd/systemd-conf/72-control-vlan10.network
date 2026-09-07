@@ -3,6 +3,9 @@ Name=vlan10
 KernelCommandLine=!nfsroot
 KernelCommandLine=!ip
 
+[Link]
+RequiredForOnline=no
+
 [Network]
 Address=192.168.101.112/24
 DHCP=no

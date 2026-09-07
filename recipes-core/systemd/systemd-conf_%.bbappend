@@ -24,4 +24,13 @@ do_install:append() {
         install -m 0644 ${WORKDIR}/${network_file} ${D}${systemd_unitdir}/network/${network_file}
     done
     install -m 0644 ${WORKDIR}/72-control-vlan10.netdev ${D}${systemd_unitdir}/network/72-control-vlan10.netdev
+
+    # All SusanOS Ethernet ports are independently configured and optional at
+    # boot. Waiting for an online link would add a 120-second boot timeout when
+    # the device starts without network cables attached.
+    install -d ${D}${sysconfdir}/systemd/system
+    ln -snf /dev/null \
+        ${D}${sysconfdir}/systemd/system/systemd-networkd-wait-online.service
 }
+
+FILES:${PN} += "${sysconfdir}/systemd/system/systemd-networkd-wait-online.service"

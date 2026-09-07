@@ -13,7 +13,3 @@ do_install:append() {
     install -m 0755 -d ${D}${sysconfdir}
     echo "ENV_DIR = ${GRUB_ENV_LOCATION}" > ${D}${sysconfdir}/mender_grubenv.config
 }
-
-do_compile:prepend() {
-    rm -f ${S}/89_susan_recovery_prompt_grub.cfg
-}

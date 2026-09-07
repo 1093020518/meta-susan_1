@@ -12,6 +12,8 @@ S = "${WORKDIR}"
 
 inherit systemd
 
+RDEPENDS:${PN} += "gzip tar"
+
 SYSTEMD_SERVICE:${PN} = "sudoagi-data-init.service"
 SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 

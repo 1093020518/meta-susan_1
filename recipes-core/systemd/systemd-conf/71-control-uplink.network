@@ -3,6 +3,9 @@ Name=enp2s0f1
 KernelCommandLine=!nfsroot
 KernelCommandLine=!ip
 
+[Link]
+RequiredForOnline=no
+
 [Network]
 DHCP=no
 VLAN=vlan10

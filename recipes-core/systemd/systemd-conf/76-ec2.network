@@ -3,6 +3,9 @@ Name=enp4s0
 KernelCommandLine=!nfsroot
 KernelCommandLine=!ip
 
+[Link]
+RequiredForOnline=no
+
 [Network]
 Address=192.168.112.200/24
 DHCP=no

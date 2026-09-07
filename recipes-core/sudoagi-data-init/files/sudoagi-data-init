@@ -3,6 +3,25 @@ set -eu
 
 DATA_ROOT="/sudoagi/data"
 MENDER_SEED="/usr/share/susan/data-seed/mender"
+TOOLS_SEED="/usr/share/sys-tools/data-seed"
+TOOLS_ROOT="${DATA_ROOT}/tools"
+TOOLS_MARKER="${DATA_ROOT}/.sys-tools-seeded-v1"
+
+install_tool() {
+    archive="$1"
+    directory="$2"
+    staging="${TOOLS_ROOT}/.${directory}.installing"
+
+    [ -f "$archive" ] || return 1
+    [ ! -e "${TOOLS_ROOT}/${directory}" ] || return 0
+
+    rm -rf "$staging"
+    mkdir -p "$staging"
+    tar -xzf "$archive" -C "$staging"
+    [ -d "${staging}/${directory}" ] || return 1
+    mv "${staging}/${directory}" "${TOOLS_ROOT}/${directory}"
+    rmdir "$staging"
+}
 
 if ! grep -qs " ${DATA_ROOT} " /proc/mounts; then
     echo "sudoagi-data-init: ${DATA_ROOT} is not mounted" >&2
@@ -33,6 +52,33 @@ if [ -d "${MENDER_SEED}" ]; then
             cp -a "$src" "${DATA_ROOT}/mender/"
         fi
     done
+fi
+
+if [ ! -e "${TOOLS_MARKER}" ]; then
+    mkdir -p "${TOOLS_ROOT}"
+
+    if install_tool \
+        "${TOOLS_SEED}/sys-profiling-service.tar.gz" \
+        "sys-profiling-service" && \
+       install_tool \
+        "${TOOLS_SEED}/sys-log-bundle-20260825.tgz" \
+        "sys-log-bundle"; then
+        chown -R root:susan-admins "${TOOLS_ROOT}"
+
+        mkdir -p \
+            "${TOOLS_ROOT}/sys-profiling-service/data/csv" \
+            "${TOOLS_ROOT}/sys-profiling-service/data/plots"
+        chown -R root:susan-admins \
+            "${TOOLS_ROOT}/sys-profiling-service/data"
+        chmod 2775 \
+            "${TOOLS_ROOT}/sys-profiling-service/data" \
+            "${TOOLS_ROOT}/sys-profiling-service/data/csv" \
+            "${TOOLS_ROOT}/sys-profiling-service/data/plots"
+
+        touch "${TOOLS_MARKER}"
+    else
+        echo "sudoagi-data-init: failed to seed system tools" >&2
+    fi
 fi
 
 exit 0

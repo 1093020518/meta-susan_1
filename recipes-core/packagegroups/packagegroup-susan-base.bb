@@ -8,7 +8,6 @@ PACKAGES = "${PN}"
 
 RDEPENDS:${PN} = " \
     base-files \
-    base-passwd \
     bash \
     ldd \
     bash-completion \
@@ -59,9 +58,6 @@ RDEPENDS:${PN} = " \
     \
     tzdata \
     \
-    apt \
-    dpkg \
-    \
     git \
     python3 \
     python3-pip \
@@ -101,6 +97,4 @@ RDEPENDS:${PN} = " \
 RRECOMMENDS:${PN} = " \
     ${@bb.utils.contains('DISTRO_FEATURES','bluetooth','bluez5','',d)} \
     ${@bb.utils.contains('DISTRO_FEATURES','wifi','wpa-supplicant','',d)} \
-    kernel-modules \
-    linux-firmware \
 "

@@ -3,6 +3,9 @@ Name=enp2s0f3
 KernelCommandLine=!nfsroot
 KernelCommandLine=!ip
 
+[Link]
+RequiredForOnline=no
+
 [Network]
 Address=192.168.110.10/24
 DHCP=no

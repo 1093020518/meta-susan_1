@@ -13,7 +13,7 @@ IMAGE_FEATURES:remove = " \
     serial-autologin-root \
 "
 
-SUSAN_IMAGE_USERS ?= "tom jerry"
+SUSAN_IMAGE_USERS ?= "sudo"
 SUSAN_IMAGE_FIRST_UID ?= "1000"
 SUSAN_IMAGE_ADMIN_GROUP ?= "susan-admins"
 SUSAN_IMAGE_ADMIN_GID ?= "1100"
@@ -92,6 +92,8 @@ CORE_IMAGE_EXTRA_INSTALL += " packagegroup-susan-base \
     miniforge3 \
     perl \
     kernel-modules \
+    linux-cip-ipu6-uapi \
+    ipu6-runtime \
     linux-firmware \
     nvidia-driver-kmod \
     nvidia-compute-libs \
@@ -103,6 +105,8 @@ CORE_IMAGE_EXTRA_INSTALL += " packagegroup-susan-base \
     libstdc++-dev glibc-dev linux-libc-headers-dev \
     binutils binutils-symlinks make pkgconfig \
     susan-rust-toolchain \
+    sys-profiling \
+    sys-log-bundle \
 "
 
 LICENSE = "MIT"
@@ -156,7 +160,6 @@ ROOTFS_POSTPROCESS_COMMAND += "install_susan_user_tmpfiles;"
 
 bind_home_to_data() {
     install -d ${IMAGE_ROOTFS}/sudoagi/data/home
-    echo "/data/home /home none bind 0 0" >> ${IMAGE_ROOTFS}${sysconfdir}/fstab
 }
 ROOTFS_POSTPROCESS_COMMAND += "bind_home_to_data;"
 
@@ -167,7 +170,6 @@ prepare_log_partition() {
     if [ -n "$JGID" ]; then
         chown root:$JGID ${IMAGE_ROOTFS}/var/log/journal
     fi
-    echo "/dev/nvme0n1p6 /var/log ext4 defaults 0 2" >> ${IMAGE_ROOTFS}${sysconfdir}/fstab
 }
 ROOTFS_POSTPROCESS_COMMAND += "prepare_log_partition;"
 
@@ -183,10 +185,33 @@ install_sudoagi_data_compat() {
     fi
 
     rm -rf ${IMAGE_ROOTFS}/data
-    ln -snf /sudoagi/data ${IMAGE_ROOTFS}/data
+    ln -snf sudoagi/data ${IMAGE_ROOTFS}/data
 
-    echo "/dev/nvme0n1p8 /sudoagi/private ext4 defaults 0 2" >> ${IMAGE_ROOTFS}${sysconfdir}/fstab
 }
 ROOTFS_POSTPROCESS_COMMAND += "install_sudoagi_data_compat;"
+
+configure_susan_fstab() {
+    fstab=${IMAGE_ROOTFS}${sysconfdir}/fstab
+    touch "$fstab"
+
+    # Mender and earlier forced rootfs runs may have added these entries.
+    # Recreate the SusanOS-owned mounts exactly once and in one place.
+    sed -i \
+        -e '\|^/dev/nvme0n1p2[[:space:]]|d' \
+        -e '\|^/dev/nvme0n1p6[[:space:]]|d' \
+        -e '\|^/dev/nvme0n1p7[[:space:]]|d' \
+        -e '\|^/dev/nvme0n1p8[[:space:]]|d' \
+        -e '\|^/data/home[[:space:]]|d' \
+        "$fstab"
+
+    cat >> "$fstab" <<'EOF'
+/dev/nvme0n1p2 /boot/efi vfat defaults 0 2
+/dev/nvme0n1p6 /var/log ext4 defaults 0 2
+/dev/nvme0n1p7 /sudoagi/data ext4 defaults 0 2
+/dev/nvme0n1p8 /sudoagi/private ext4 defaults 0 2
+/data/home /home none bind 0 0
+EOF
+}
+ROOTFS_POSTPROCESS_COMMAND += "configure_susan_fstab;"
 
 IMAGE_INSTALL:append = " docker-moby docker-compose libclang1-18 libllvm18 libedit2 libtinfo6"

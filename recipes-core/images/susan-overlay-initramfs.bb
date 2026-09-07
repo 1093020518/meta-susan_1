@@ -11,6 +11,9 @@ INITRAMFS_SCRIPTS = " \
 
 PACKAGE_INSTALL = "${INITRAMFS_SCRIPTS} ${VIRTUAL-RUNTIME_base-utils} base-passwd"
 
+# Built-in i915 requests GuC/HuC/DMC firmware before the real rootfs is mounted.
+PACKAGE_INSTALL:append = " linux-firmware-i915"
+
 IMAGE_FEATURES = ""
 IMAGE_LINGUAS = ""
 PACKAGE_EXCLUDE = "kernel-image-*"

@@ -1,9 +1,0 @@
-# touchpad.scc — enable the Intel Raptor Lake Serial IO I2C touchpad.
-# The touchpad is an I2C-HID device behind the Intel Raptor Lake Serial IO I2C
-# controller (PCI 00:15.0, 8086:7a4c — a Designware PCI I2C block gated by the
-# Intel LPSS MFD). The base genericx86-64 kernel config leaves the controller
-# and the I2C-HID ACPI binding off, so the touchpad never enumerates. This
-# fragment turns them on (see touchpad.cfg). "non-hardware" so it merges into
-# the kernel-meta .config without forcing a full feature branch.
-define KFEATURE_DESCRIPTION "I2C-HID touchpad (Intel Raptor Lake Serial IO I2C)"
-kconf non-hardware touchpad.cfg

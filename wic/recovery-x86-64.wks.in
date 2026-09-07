@@ -23,4 +23,4 @@ part /sudoagi/data --ondisk nvme0n1 --fstype=ext4 --label data --part-name data 
 # p8 Private
 part /sudoagi/private --ondisk nvme0n1 --fstype=ext4 --label private --part-name private --align 1024 --fixed-size 46000M --part-type=0FC63DAF-8483-4772-8E79-3D69D8477DE4 --no-fstab-update
 
-bootloader --ptable gpt --timeout=5 --append="rootfstype=ext4 ro rootwait sudoagi_overlay=1 sudoagi_overlay_dev=/dev/nvme0n1p7 sudoagi_private_dev=/dev/nvme0n1p8 console=ttyS0,115200 console=tty0"
+bootloader --ptable gpt --timeout=5 --append="rootfstype=ext4 ro rootwait sudoagi_overlay=1 sudoagi_overlay_dev=/dev/nvme0n1p7 console=ttyS0,115200 console=tty0"
